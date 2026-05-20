@@ -544,11 +544,24 @@
                 const imgElement = document.getElementById(`img-${realIndex}`);
                 if (imgElement && imgElement.src && !imgElement.src.includes('Image absente')) {
                     try {
+                        const imgW = imgElement.naturalWidth || 512;
+                        const imgH = imgElement.naturalHeight || 512;
+                        const minSize = Math.min(imgW, imgH);
+                        const sx = (imgW - minSize) / 2;
+                        const sy = (imgH - minSize) / 2;
+
                         const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = imgElement.naturalWidth || 512;
-                        tempCanvas.height = imgElement.naturalHeight || 512;
+                        tempCanvas.width = 512;
+                        tempCanvas.height = 512;
                         const ctx = tempCanvas.getContext('2d');
-                        ctx.drawImage(imgElement, 0, 0, tempCanvas.width, tempCanvas.height);
+                        
+                        // Fond gris-blanc comme la page web
+                        ctx.fillStyle = "#f8f9fa";
+                        ctx.fillRect(0, 0, 512, 512);
+                        
+                        // Dessiner l'image recadrée au centre (object-fit: cover)
+                        ctx.drawImage(imgElement, sx, sy, minSize, minSize, 0, 0, 512, 512);
+                        
                         const imgData = tempCanvas.toDataURL('image/jpeg', 0.9);
                         pdf.addImage(imgData, 'JPEG', currentX, currentY, imgSize, imgSize);
                     } catch (e) {
