@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ANDRA - 3D Asset Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Librairies pour l'export PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Librairie jsPDF pour l'export vectoriel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         :root {
@@ -302,55 +301,6 @@
             color: var(--primary);
             transform: translateY(-3px);
         }
-
-        /* PDF EXPORT STYLES (.pdf-mode) */
-        body.pdf-mode {
-            background: white;
-            color: black;
-            background-image: none;
-        }
-        body.pdf-mode header {
-            position: static;
-            background: white;
-            border-bottom: 2px solid #ccc;
-            padding: 1rem 0;
-        }
-        body.pdf-mode .logo h1 { color: black; }
-        body.pdf-mode .doc-info { color: #555; }
-        body.pdf-mode .doc-date { color: black; }
-        body.pdf-mode .controls, body.pdf-mode #export-md-btn, body.pdf-mode .edit-btn { display: none !important; }
-        
-        body.pdf-mode .container {
-            max-width: 100%;
-            margin: 1rem 0;
-            padding: 0;
-        }
-        
-        body.pdf-mode .grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr); /* 3 colonnes pour le PDF */
-            gap: 1.5rem;
-        }
-        
-        body.pdf-mode .asset-card {
-            background: white;
-            border: 1px solid #ccc;
-            box-shadow: none;
-            /* jsPDF ne gère pas le break-inside de la même manière que window.print, mais on le laisse au cas où */
-            break-inside: avoid; 
-        }
-        
-        body.pdf-mode .img-box {
-            background: #f0f0f0;
-        }
-        
-        body.pdf-mode .category-tag { color: #666; }
-        body.pdf-mode .description { color: #333; }
-        body.pdf-mode .tag {
-            background: #eee;
-            color: #333;
-            border: 1px solid #ccc;
-        }
     }
     </style>
 </head>
@@ -535,56 +485,130 @@
         btn.innerHTML = '⏳ Génération...';
         btn.disabled = true;
 
-        // 1. Appliquer le mode PDF
-        document.body.classList.add('pdf-mode');
-        
-        // Laisser au navigateur le temps d'appliquer les styles
-        await new Promise(r => setTimeout(r, 200));
-
         try {
-            // 2. Capturer le body
-            const canvas = await html2canvas(document.body, { 
-                scale: 2, // Meilleure résolution
-                useCORS: true,
-                logging: false
-            });
-
-            // 3. Revenir à la normale
-            document.body.classList.remove('pdf-mode');
-
-            // 4. Générer le PDF
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const { jsPDF } = window.jspdf;
-            
-            // Format A4 portrait
             const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
+            
+            const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 15;
+            const colCount = 3;
+            const gap = 10;
+            const colWidth = (pageWidth - (margin * 2) - (gap * (colCount - 1))) / colCount;
             
-            // Calculer la hauteur totale de l'image sur le PDF
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            // Layout carte
+            const imgSize = colWidth;
+            const textSectionHeight = 45; 
+            const cardHeight = imgSize + textSectionHeight;
             
-            let heightLeft = pdfHeight;
-            let position = 0;
+            let currentY = margin;
+            let currentX = margin;
+            let colIndex = 0;
 
-            // Ajouter la première page
-            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pageHeight;
+            // En-tête
+            pdf.setFontSize(16);
+            pdf.setFont("helvetica", "bold");
+            pdf.setTextColor(0, 0, 0);
+            pdf.text("ANDRA - 3D Asset Manager", margin, currentY + 5);
+            
+            pdf.setFontSize(10);
+            pdf.setFont("helvetica", "normal");
+            pdf.setTextColor(100, 100, 100);
+            const dateStr = document.getElementById('doc-date').textContent;
+            pdf.text(`Mis à jour le : ${dateStr}`, margin, currentY + 12);
+            
+            currentY += 25;
 
-            // Ajouter d'autres pages si nécessaire
-            while (heightLeft > 0) {
-                position = heightLeft - pdfHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-                heightLeft -= pageHeight;
+            // Récupérer les assets affichés à l'écran
+            const displayedTitles = Array.from(document.querySelectorAll('.asset-title')).map(el => el.textContent);
+            const filteredAssets = assets.filter(a => displayedTitles.includes(a.name));
+
+            for (let i = 0; i < filteredAssets.length; i++) {
+                const asset = filteredAssets[i];
+                
+                // Sauts de page
+                if (currentY + cardHeight > pageHeight - margin) {
+                    pdf.addPage();
+                    currentY = margin;
+                    colIndex = 0;
+                    currentX = margin;
+                }
+
+                // Fond de carte et bordure
+                pdf.setDrawColor(200, 200, 200);
+                pdf.setFillColor(255, 255, 255);
+                pdf.roundedRect(currentX, currentY, colWidth, cardHeight, 2, 2, 'FD');
+
+                // Image via un canvas intermédiaire pour assurer la compatibilité jsPDF (base64)
+                const realIndex = assets.findIndex(a => a.name === asset.name);
+                const imgElement = document.getElementById(`img-${realIndex}`);
+                if (imgElement && imgElement.src && !imgElement.src.includes('Image absente')) {
+                    try {
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = imgElement.naturalWidth || 512;
+                        tempCanvas.height = imgElement.naturalHeight || 512;
+                        const ctx = tempCanvas.getContext('2d');
+                        ctx.drawImage(imgElement, 0, 0, tempCanvas.width, tempCanvas.height);
+                        const imgData = tempCanvas.toDataURL('image/jpeg', 0.9);
+                        pdf.addImage(imgData, 'JPEG', currentX, currentY, imgSize, imgSize);
+                    } catch (e) {
+                        pdf.setFillColor(240, 240, 240);
+                        pdf.rect(currentX, currentY, imgSize, imgSize, 'F');
+                    }
+                } else {
+                    pdf.setFillColor(240, 240, 240);
+                    pdf.rect(currentX, currentY, imgSize, imgSize, 'F');
+                }
+
+                // Ligne séparatrice
+                pdf.setDrawColor(230, 230, 230);
+                pdf.line(currentX, currentY + imgSize, currentX + colWidth, currentY + imgSize);
+
+                let textY = currentY + imgSize + 5;
+                
+                // Catégorie
+                pdf.setFontSize(8);
+                pdf.setFont("helvetica", "bold");
+                pdf.setTextColor(255, 150, 0);
+                pdf.text(asset.cat.toUpperCase(), currentX + 3, textY);
+                textY += 5;
+
+                // Titre
+                pdf.setFontSize(10);
+                pdf.setFont("helvetica", "bold");
+                pdf.setTextColor(0, 0, 0);
+                const splitTitle = pdf.splitTextToSize(asset.name, colWidth - 6);
+                pdf.text(splitTitle, currentX + 3, textY);
+                textY += (splitTitle.length * 4) + 2;
+
+                // Description
+                pdf.setFontSize(8);
+                pdf.setFont("helvetica", "normal");
+                pdf.setTextColor(100, 100, 100);
+                const splitDesc = pdf.splitTextToSize(asset.desc, colWidth - 6);
+                pdf.text(splitDesc, currentX + 3, textY);
+                
+                // Tags en bas de carte
+                pdf.setFontSize(7);
+                pdf.setTextColor(150, 150, 150);
+                const tagsStr = [...asset.film, asset.seq].join(' • ');
+                pdf.text(tagsStr, currentX + 3, currentY + cardHeight - 3);
+
+                // Déplacement
+                colIndex++;
+                if (colIndex >= colCount) {
+                    colIndex = 0;
+                    currentX = margin;
+                    currentY += cardHeight + gap;
+                } else {
+                    currentX += colWidth + gap;
+                }
             }
 
-            // Sauvegarder
             pdf.save('ANDRA_Asset_Manager.pdf');
         } catch (error) {
             console.error("Erreur lors de la génération du PDF", error);
             alert("Erreur lors de la génération du PDF.");
-            document.body.classList.remove('pdf-mode');
         } finally {
             btn.innerHTML = originalText;
             btn.disabled = false;
