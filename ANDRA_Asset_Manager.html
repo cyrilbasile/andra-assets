@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ANDRA - 3D Asset Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Librairies pour l'export PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         :root {
             --primary: #ffcc00;
@@ -300,55 +303,55 @@
             transform: translateY(-3px);
         }
 
-        /* PRINT STYLES (PDF Generation) */
-        @media print {
-            body {
-                background: white;
-                color: black;
-                background-image: none;
-            }
-            header {
-                position: static;
-                background: white;
-                border-bottom: 2px solid #ccc;
-                padding: 1rem 0;
-            }
-            .logo h1 { color: black; }
-            .doc-info { color: #555; }
-            .doc-date { color: black; }
-            .controls, #export-md-btn, .edit-btn { display: none; }
-            
-            .container {
-                max-width: 100%;
-                margin: 1rem 0;
-                padding: 0;
-            }
-            
-            .grid {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr); /* 3 colonnes pour le PDF */
-                gap: 1.5rem;
-            }
-            
-            .asset-card {
-                background: white;
-                border: 1px solid #ccc;
-                box-shadow: none;
-                break-inside: avoid; /* Évite de couper la carte sur 2 pages */
-            }
-            
-            .img-box {
-                background: #f0f0f0;
-            }
-            
-            .category-tag { color: #666; }
-            .description { color: #333; }
-            .tag {
-                background: #eee;
-                color: #333;
-                border: 1px solid #ccc;
-            }
+        /* PDF EXPORT STYLES (.pdf-mode) */
+        body.pdf-mode {
+            background: white;
+            color: black;
+            background-image: none;
         }
+        body.pdf-mode header {
+            position: static;
+            background: white;
+            border-bottom: 2px solid #ccc;
+            padding: 1rem 0;
+        }
+        body.pdf-mode .logo h1 { color: black; }
+        body.pdf-mode .doc-info { color: #555; }
+        body.pdf-mode .doc-date { color: black; }
+        body.pdf-mode .controls, body.pdf-mode #export-md-btn, body.pdf-mode .edit-btn { display: none !important; }
+        
+        body.pdf-mode .container {
+            max-width: 100%;
+            margin: 1rem 0;
+            padding: 0;
+        }
+        
+        body.pdf-mode .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 3 colonnes pour le PDF */
+            gap: 1.5rem;
+        }
+        
+        body.pdf-mode .asset-card {
+            background: white;
+            border: 1px solid #ccc;
+            box-shadow: none;
+            /* jsPDF ne gère pas le break-inside de la même manière que window.print, mais on le laisse au cas où */
+            break-inside: avoid; 
+        }
+        
+        body.pdf-mode .img-box {
+            background: #f0f0f0;
+        }
+        
+        body.pdf-mode .category-tag { color: #666; }
+        body.pdf-mode .description { color: #333; }
+        body.pdf-mode .tag {
+            background: #eee;
+            color: #333;
+            border: 1px solid #ccc;
+        }
+    }
     </style>
 </head>
 <body>
@@ -372,7 +375,7 @@
             <option value="CIRES">CIRES</option>
             <option value="CMHM">CMHM</option>
         </select>
-        <button class="btn-action" onclick="window.print()">
+        <button id="pdf-gen-btn" class="btn-action" onclick="generatePDF()">
             📄 Générer PDF
         </button>
     </div>
@@ -524,6 +527,68 @@
         navigator.clipboard.writeText(md).then(() => {
             alert("Tableau Markdown copié dans le presse-papier !");
         });
+    }
+
+    async function generatePDF() {
+        const btn = document.getElementById('pdf-gen-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ Génération...';
+        btn.disabled = true;
+
+        // 1. Appliquer le mode PDF
+        document.body.classList.add('pdf-mode');
+        
+        // Laisser au navigateur le temps d'appliquer les styles
+        await new Promise(r => setTimeout(r, 200));
+
+        try {
+            // 2. Capturer le body
+            const canvas = await html2canvas(document.body, { 
+                scale: 2, // Meilleure résolution
+                useCORS: true,
+                logging: false
+            });
+
+            // 3. Revenir à la normale
+            document.body.classList.remove('pdf-mode');
+
+            // 4. Générer le PDF
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const { jsPDF } = window.jspdf;
+            
+            // Format A4 portrait
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            
+            // Calculer la hauteur totale de l'image sur le PDF
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            
+            let heightLeft = pdfHeight;
+            let position = 0;
+
+            // Ajouter la première page
+            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+            heightLeft -= pageHeight;
+
+            // Ajouter d'autres pages si nécessaire
+            while (heightLeft > 0) {
+                position = heightLeft - pdfHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+                heightLeft -= pageHeight;
+            }
+
+            // Sauvegarder
+            pdf.save('ANDRA_Asset_Manager.pdf');
+        } catch (error) {
+            console.error("Erreur lors de la génération du PDF", error);
+            alert("Erreur lors de la génération du PDF.");
+            document.body.classList.remove('pdf-mode');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
 
     searchInput.addEventListener('input', renderAssets);
