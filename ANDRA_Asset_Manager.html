@@ -517,6 +517,14 @@
             const dateStr = document.getElementById('doc-date').textContent;
             pdf.text(`Mis à jour le : ${dateStr}`, margin, currentY + 12);
             
+            // Lien cliquable vers la version en ligne
+            pdf.setFontSize(9);
+            pdf.setTextColor(0, 102, 204); // Bleu
+            const linkText = "→ Consulter la version web en direct";
+            const linkWidth = pdf.getTextWidth(linkText);
+            // On le positionne aligné à droite, en haut
+            pdf.textWithLink(linkText, pageWidth - margin - linkWidth, currentY + 5, { url: 'https://cyrilbasile.github.io/andra-assets/ANDRA_Asset_Manager.html' });
+
             currentY += 25;
 
             // Récupérer les assets affichés à l'écran
